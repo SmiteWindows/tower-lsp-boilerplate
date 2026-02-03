@@ -15,9 +15,8 @@
   "scripts": {
     "postinstall": "cd client && bun install",
     "compile": "bun run check-types && node esbuild.js --production",
-    "check-types": "bun --bun tsc --noEmit",
+    "check-types": "tsc --noEmit",
     "watch": "bun --parallel watch:*",
-    "watch:all": "bun --parallel run watch:esbuild watch:tsc",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "vsce package --no-dependencies",

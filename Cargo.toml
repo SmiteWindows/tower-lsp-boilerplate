@@ -19,7 +19,5 @@ im-rc = "15.0"
 anyhow = "1.0"
 thiserror = "2.0"
 dashmap = "6.1.0"
-tower-lsp-server ={version="0.23",features=["proposed"]} 
+tower-lsp-server = { version = "0.23", features = ["proposed"] }
 tokio = { version = "1.49", features = ["full"] }
-
-
