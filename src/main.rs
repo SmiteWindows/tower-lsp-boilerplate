@@ -736,22 +736,19 @@ impl Backend {
         // Add references within range
         for (ref_id, span) in semantic_result.semantic.reference_spans.iter_enumerated() {
             let token_start = span.start as usize;
-            if token_start >= start_offset && token_start < end_offset {
-                if let Some(symbol_id) = semantic_result.semantic.references[ref_id] {
-                    let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                    let token_type = match kind {
-                        SymbolKind::Function => 0,
-                        SymbolKind::Variable => 1,
-                        SymbolKind::Parameter => 2,
-                        SymbolKind::Struct => 3,
-                        SymbolKind::Field => 4,
-                    };
-                    incomplete_tokens.push((
-                        token_start,
-                        (span.end - span.start) as usize,
-                        token_type,
-                    ));
-                }
+            if token_start >= start_offset
+                && token_start < end_offset
+                && let Some(symbol_id) = semantic_result.semantic.references[ref_id]
+            {
+                let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
+                let token_type = match kind {
+                    SymbolKind::Function => 0,
+                    SymbolKind::Variable => 1,
+                    SymbolKind::Parameter => 2,
+                    SymbolKind::Struct => 3,
+                    SymbolKind::Field => 4,
+                };
+                incomplete_tokens.push((token_start, (span.end - span.start) as usize, token_type));
             }
         }
 
