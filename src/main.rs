@@ -1,13 +1,13 @@
 use dashmap::DashMap;
 use l_lang::{
-    compile, find_node_at_offset, AstNode, CompileResult, Formatter, SymbolId, SymbolKind, Type,
+    AstNode, CompileResult, Formatter, SymbolId, SymbolKind, Type, compile, find_node_at_offset,
 };
 use log::debug;
 use ropey::Rope;
 use serde_json::Value;
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer, LspService, Server};
+use tower_lsp_server::jsonrpc::Result;
+use tower_lsp_server::ls_types::*;
+use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 
 #[derive(Debug)]
 struct Backend {
@@ -16,9 +16,9 @@ struct Backend {
     semanticast_map: DashMap<String, CompileResult>,
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        //  Ok(InitializeResult::default())
         Ok(InitializeResult {
             server_info: None,
             offset_encoding: None,
@@ -95,6 +95,9 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
+        self.client
+            .log_message(MessageType::INFO, "server initialized!")
+            .await;
         debug!("initialized!");
     }
 
@@ -172,10 +175,7 @@ impl LanguageServer for Backend {
         }))
     }
 
-    async fn inlay_hint(
-        &self,
-        params: tower_lsp::lsp_types::InlayHintParams,
-    ) -> Result<Option<Vec<InlayHint>>> {
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
         Ok(self.build_inlay_hints(params.text_document.uri.as_ref()))
     }
 
@@ -221,7 +221,7 @@ async fn main() {
 
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
-
+    //  let (service, socket) = LspService::new(|client| Backend { client });
     let (service, socket) = LspService::build(|client| Backend {
         client,
         semanticast_map: DashMap::new(),
@@ -276,8 +276,7 @@ impl Backend {
                         let start = offset_to_position(span.start as usize, &rope)?;
                         let end = offset_to_position(span.end as usize, &rope)?;
                         let location = Location::new(
-                            Url::parse(uri)
-                                .unwrap_or_else(|_| Url::from_directory_path(uri).unwrap()),
+                            Uri::from_file_path(uri).unwrap(),
                             Range::new(start, end),
                         );
                         parts.push(InlayHintLabelPart {
@@ -364,7 +363,8 @@ impl Backend {
         let symbol_id = compilation_result.semantic.get_symbol_at(offset)?;
 
         let mut references = Vec::new();
-        let uri = Url::parse(&uri).unwrap_or_else(|_| Url::from_directory_path(&uri).unwrap());
+        let uri = Uri::from_file_path(&uri).unwrap();
+        // let uri = Url::parse(&uri).unwrap_or_else(|_| Url::from_directory_path(&uri).unwrap());
         if include_self {
             // Include the symbol definition itself
             let symbol_span = compilation_result.semantic.get_symbol_span(symbol_id);
@@ -401,8 +401,7 @@ impl Backend {
             .collect::<Vec<_>>();
 
         // Create workspace edit with the text edits
-        let parsed_uri =
-            Url::parse(&uri).unwrap_or_else(|_| Url::from_directory_path(&uri).unwrap());
+        let parsed_uri = Uri::from_file_path(&uri).unwrap();
         let mut edit_map = std::collections::HashMap::new();
         edit_map.insert(parsed_uri, edits);
 
@@ -613,8 +612,7 @@ impl Backend {
             }
         });
 
-        let uri =
-            Url::parse(&item.uri).unwrap_or_else(|_| Url::from_directory_path(&item.uri).unwrap());
+        let uri = Uri::from_file_path(&item.uri).unwrap();
         self.client
             .publish_diagnostics(uri, diagnostics, None)
             .await;

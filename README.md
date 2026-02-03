@@ -1,4 +1,4 @@
-# boilerplate for a rust language server powered by `tower-lsp`
+# boilerplate for a rust language server powered by `tower-lsp-server`
 
 > [!note]
 > This repo uses [l-lang](https://github.com/IWANABETHATGUY/l-lang), a simple statically-typed programming language with structs, functions, and expressions.
@@ -51,11 +51,11 @@ L-lang is a statically-typed language that supports:
 
 ## Introduction
 
-This repo is a template for building Language Server Protocol (LSP) implementations using `tower-lsp`, demonstrating how to create language servers with full IDE support.
+This repo is a template for building Language Server Protocol (LSP) implementations using `tower-lsp-server`, demonstrating how to create language servers with full IDE support.
 
 ## Development using VSCode
 
-1. `pnpm i`
+1. `bun install`
 2. `cargo build`
 3. Open the project in VSCode: `code .`
 4. In VSCode, press <kbd>F5</kbd> or change to the Debug panel and click <kbd>Launch Client</kbd>.
@@ -70,7 +70,7 @@ This repo is a template for building Language Server Protocol (LSP) implementati
 
 1. Make sure all dependency are installed.
 2. Make sure the `l-language-server` is under your `PATH`
-3. `pnpm run package`
+3. `bun run package`
 4. `code --install-extension l-language-server-${version}.vsix`, the `version` you could inspect in file system.
 5. Restart the `VsCode`, and write a minimal `L` file, then inspect the effect.
 

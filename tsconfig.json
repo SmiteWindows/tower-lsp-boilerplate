@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2019",
-    "lib": ["ES2019"],
+    "moduleResolution": "bundler",
+    "target": "es2024",
+    "lib": ["ESNext"],
     "outDir": "out",
     "rootDir": "src",
     "sourceMap": true

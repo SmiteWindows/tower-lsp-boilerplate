@@ -45,20 +45,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Install bun
+        uses: oven-sh/setup-bun@v1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: ".node-version"
-          cache: "pnpm"
+          cache: "bun"
 
       - name: Install dependencies
-        run: pnpm install
+        run: bun install
 
       - name: Check formatting
-        run: pnpm run fmt:check
+        run: bun run fmt:check
 
       - name: Lint
-        run: pnpm run lint
+        run: bun run lint

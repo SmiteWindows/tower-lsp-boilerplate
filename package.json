@@ -5,7 +5,7 @@
   "categories": [],
   "keywords": [
     "language-server",
-    "tower-lsp"
+    "tower-lsp-server"
   ],
   "license": "MIT",
   "repository": {
@@ -13,12 +13,13 @@
   },
   "main": "./dist/extension.js",
   "scripts": {
-    "postinstall": "cd client && pnpm i",
-    "compile": "npm run check-types && node esbuild.js --production",
-    "check-types": "tsc --noEmit",
-    "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
-    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "postinstall": "cd client && bun install",
+    "compile": "bun run check-types && bun esbuild.js --production",
+    "check-types": "bun --bun tsc --noEmit",
+    "watch": "bun --run watch:all",
+    "watch:all": "bun --parallel run watch:esbuild watch:tsc",
+    "watch:esbuild": "bun esbuild.js --watch",
+    "watch:tsc": "bun --bun tsc --noEmit --watch --project tsconfig.json",
     "package": "vsce package --no-dependencies",
     "lint": "oxlint -c oxlint.json .",
     "fmt": "oxfmt --write .",
@@ -27,19 +28,19 @@
   "devDependencies": {
     "@types/glob": "8.1.0",
     "@types/mocha": "10.0.10",
-    "@types/node": "22.10.2",
+    "@types/node": "25.2.0",
     "@vscode/vsce": "^3.2.1",
-    "cross-env": "^7.0.2",
-    "esbuild": "^0.24.2",
-    "glob": "11.0.0",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.27.2",
+    "glob": "13.0.0",
     "mocha": "11.0.2",
     "npm-run-all": "^4.1.5",
-    "oxfmt": "^0.24.0",
-    "oxlint": "^1.39.0",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^1.43.0",
     "ts-loader": "^9.5.1",
-    "typescript": "5.4.5",
-    "vscode-test": "^1.4.0",
-    "vscode-uri": "^3.0.2"
+    "typescript": "5.9.3",
+    "@vscode/test-electron": "^2.3.9",
+    "vscode-uri": "^3.1.0"
   },
   "contributes": {
     "languages": [
@@ -77,8 +78,8 @@
     "onLanguage:l"
   ],
   "engines": {
-    "vscode": "^1.66.0"
+    "vscode": "^1.108.0"
   },
-  "packageManager": "pnpm@8.15.7",
+  "packageManager": "bun@1.1.12",
   "enabledApiProposals": []
 }
