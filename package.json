@@ -22,7 +22,6 @@
     "dev:typecheck": "bun run --watch check-types",
     "package": "vsce package --no-dependencies",
     "lint": "oxlint -c oxlint.json .",
-    "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check ."
   },
   "devDependencies": {
