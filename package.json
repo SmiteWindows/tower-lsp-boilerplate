@@ -69,7 +69,7 @@
     "onLanguage:l"
   ],
   "engines": {
-    "vscode": "^1.108.0"
+    "vscode": "^1.107.0"
   },
   "enabledApiProposals": []
 }
