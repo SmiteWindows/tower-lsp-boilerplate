@@ -79,6 +79,5 @@
   "engines": {
     "vscode": "^1.108.0"
   },
-  "packageManager": "bun@1.1.12",
   "enabledApiProposals": []
 }
