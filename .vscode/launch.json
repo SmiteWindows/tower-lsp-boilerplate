@@ -3,14 +3,34 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Launch Extension",
       "type": "extensionHost",
       "request": "launch",
-      "name": "Launch Client",
-      "runtimeExecutable": "${execPath}",
-      "args": ["--extensionDevelopmentPath=${workspaceRoot}"],
-      "outFiles": ["${workspaceRoot}/client/out/**/*.js"],
-      "env": {
-        "SERVER_PATH": "${workspaceRoot}/target/debug/l-language-server"
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/client/out/**/*.js"
+      ],
+      "preLaunchTask": "Compile Extension",
+      "runtimeEnvironment": {
+        "SERVER_PATH": "${workspaceFolder}/target/debug/l-language-server"
+      }
+    },
+    {
+      "name": "Launch Extension in Debug Mode",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/client/out/**/*.js"
+      ],
+      "preLaunchTask": "Compile Extension",
+      "runtimeEnvironment": {
+        "SERVER_PATH": "${workspaceFolder}/target/debug/l-language-server",
+        "RUST_LOG": "debug"
       }
     },
     // {

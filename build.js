@@ -7,8 +7,8 @@ async function main() {
   const result = await build({
     entrypoints: ["client/src/extension.ts"],
     outdir: "dist",
-    target: "bun",
-    format: "esm",
+    target: "node",
+    format: "cjs",
     minify: production,
     sourcemap: !production ? "inline" : false,
     external: ["vscode"],
