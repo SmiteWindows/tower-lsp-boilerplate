@@ -5,7 +5,7 @@
 
 /**
  * VSCode extension for the L programming language.
- * 
+ *
  * This extension provides language support for the L programming language by implementing
  * a client for the Language Server Protocol (LSP). It connects to the L language server
  * and provides features such as syntax highlighting, code completion, goto definition,
@@ -20,7 +20,7 @@ import {
   Executable,
   LanguageClient,
   LanguageClientOptions,
-  ServerOptions
+  ServerOptions,
 } from "vscode-languageclient/node";
 
 /**
@@ -31,10 +31,10 @@ let client: LanguageClient;
 
 /**
  * Called when the extension is activated.
- * 
+ *
  * This function is called when the extension is first loaded. It sets up the
  * language client and starts the connection to the L language server.
- * 
+ *
  * @param _context The extension context
  */
 export async function activate(_context: ExtensionContext) {
@@ -111,7 +111,7 @@ export async function activate(_context: ExtensionContext) {
       },
     },
   };
-  
+
   // Server options for both debug and run modes
   const serverOptions: ServerOptions = {
     run,
@@ -121,16 +121,16 @@ export async function activate(_context: ExtensionContext) {
   let clientOptions: LanguageClientOptions = {
     // Register the server for plain text documents with the 'l' language
     documentSelector: [{ scheme: "file", language: "l" }],
-    
+
     // Synchronize configuration and file changes with the server
     synchronize: {
       // Notify the server about file changes to '.clientrc files contained in the workspace
       fileEvents: workspace.createFileSystemWatcher("**/.clientrc"),
     },
-    
+
     // Use the trace output channel for logging
     traceOutputChannel,
-    
+
     // Error handling and reconnection options
     errorHandler: {
       // Handle errors that occur during LSP communication
@@ -154,17 +154,17 @@ export async function activate(_context: ExtensionContext) {
     serverOptions,
     clientOptions,
   );
-  
+
   // Start the language client
   client.start();
 }
 
 /**
  * Called when the extension is deactivated.
- * 
+ *
  * This function is called when the extension is unloaded. It stops the language client
  * and cleans up any resources.
- * 
+ *
  * @returns A promise that resolves when deactivation is complete
  */
 export function deactivate(): Thenable<void> | undefined {
@@ -172,9 +172,9 @@ export function deactivate(): Thenable<void> | undefined {
   if (!client) {
     return undefined;
   }
-  
+
   console.log("Stopping L language server...");
-  
+
   try {
     // Stop the language client and handle the result
     return client.stop().then(
@@ -183,7 +183,7 @@ export function deactivate(): Thenable<void> | undefined {
       },
       (reason) => {
         console.error(`Failed to stop L language server: ${reason}`);
-      }
+      },
     );
   } catch (error) {
     // Handle any unexpected errors during shutdown
