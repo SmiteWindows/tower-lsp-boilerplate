@@ -2,6 +2,7 @@
   "name": "l-language-server",
   "version": "1.5.0",
   "description": "L language server",
+  "type": "module",
   "categories": [],
   "keywords": [
     "language-server",
@@ -15,14 +16,14 @@
   "scripts": {
     "postinstall": "cd client && bun install",
     "compile": "bun run check-types && bun run build",
-    "build": "bun esbuild.js --production",
+    "build": "bun build.js --production",
     "check-types": "bun tsc --noEmit",
     "dev": "bun --parallel dev:build dev:typecheck",
     "dev:build": "bun run --watch build",
     "dev:typecheck": "bun run --watch check-types",
     "package": "vsce package --no-dependencies",
     "lint": "oxlint -c oxlint.json .",
-    "fmt:check": "oxfmt --check ."
+    "fmt:check": "oxfmt --check build.js client/src/extension.ts"
   },
   "devDependencies": {
     "@types/glob": "9.0.0",
@@ -30,7 +31,6 @@
     "@types/node": "25.2.0",
     "@vscode/vsce": "^3.2.1",
     "cross-env": "^10.1.0",
-    "esbuild": "^0.27.2",
     "glob": "13.0.0",
     "mocha": "11.0.2",
     "npm-run-all": "^4.1.5",
