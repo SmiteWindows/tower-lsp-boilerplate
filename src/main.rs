@@ -4,7 +4,7 @@
 //! It provides features such as code completion, goto definition, references, rename,
 //! formatting, inlay hints, and semantic tokens.
 //!
-//! The server is built using the tower-lsp library and communicates with the client
+//! The server is built using the tower-lsp-server library and communicates with the client
 //! through JSON-RPC messages.
 
 use dashmap::DashMap;
@@ -154,14 +154,21 @@ impl LanguageServer for Backend {
     /// This method is called by the client when it wants to shut down the server.
     /// The server should respond with Ok(()) and then exit.
     async fn shutdown(&self) -> Result<()> {
-        // 设置关闭标志
+        debug!("Shutdown request received");
+
+        // Set the shutdown flag
         self.is_shutdown
             .store(true, std::sync::atomic::Ordering::Release);
 
-        // 清理所有存储的数据
+        // Clear all stored data to free resources
         self.semanticast_map.clear();
         self.document_map.clear();
 
+        debug!(
+            "Cleared {} documents and {} semantic results",
+            self.document_map.len(),
+            self.semanticast_map.len()
+        );
         debug!("Server shutting down gracefully");
         Ok(())
     }
@@ -230,7 +237,31 @@ impl LanguageServer for Backend {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_string();
+        let position = params.text_document_position_params.position;
+        debug!(
+            "Goto definition request for {} at line {}, col {}",
+            uri, position.line, position.character
+        );
+
         let definition = self.get_definition(params);
+
+        if definition.is_some() {
+            debug!(
+                "Found definition for symbol at line {}, col {}",
+                position.line, position.character
+            );
+        } else {
+            debug!(
+                "No definition found for symbol at line {}, col {}",
+                position.line, position.character
+            );
+        }
+
         Ok(definition)
     }
 
@@ -241,7 +272,28 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = params.text_document_position.text_document.uri.to_string();
         let position = params.text_document_position.position;
-        let references = self.get_references(uri, position, params.context.include_declaration);
+        let include_declaration = params.context.include_declaration;
+        debug!(
+            "References request for {} at line {}, col {} (include_declaration: {})",
+            uri, position.line, position.character, include_declaration
+        );
+
+        let references = self.get_references(uri.clone(), position, include_declaration);
+
+        if let Some(refs) = &references {
+            debug!(
+                "Found {} references for symbol at line {}, col {}",
+                refs.len(),
+                position.line,
+                position.character
+            );
+        } else {
+            debug!(
+                "No references found for symbol at line {}, col {}",
+                position.line, position.character
+            );
+        }
+
         Ok(references)
     }
 
@@ -308,8 +360,20 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri.to_string();
         let position = params.text_document_position.position;
-        let new_name = params.new_name;
-        let workspace_edit = self.get_rename_edit(uri, position, new_name);
+        let new_name = params.new_name.clone();
+        debug!(
+            "Rename request for {} at line {}, col {} to '{}'",
+            uri, position.line, position.character, new_name
+        );
+
+        let workspace_edit = self.get_rename_edit(uri.clone(), position, new_name);
+
+        if workspace_edit.is_some() {
+            debug!("Created workspace edit for rename operation");
+        } else {
+            debug!("Could not create workspace edit for rename operation");
+        }
+
         Ok(workspace_edit)
     }
 
@@ -346,16 +410,18 @@ impl LanguageServer for Backend {
 /// This function sets up the server, handles signals for graceful shutdown,
 /// and starts the main event loop.
 async fn main() {
+    // Initialize logger
     env_logger::init();
+    debug!("Starting L Language Server");
 
-    // 设置信号处理以实现优雅关闭
+    // Set up signal handling for graceful shutdown
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
-    // 处理Ctrl+C信号
+    // Handle Ctrl+C signal
     tokio::spawn(async move {
         match tokio::signal::ctrl_c().await {
             Ok(()) => {
-                debug!("Received shutdown signal");
+                debug!("Received shutdown signal (Ctrl+C)");
                 let _ = shutdown_tx.send(());
             }
             Err(err) => {
@@ -367,6 +433,7 @@ async fn main() {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
+    debug!("Creating LSP service");
     let (service, socket) = LspService::build(|client| Backend {
         client,
         semanticast_map: DashMap::new(),
@@ -375,7 +442,7 @@ async fn main() {
     })
     .finish();
 
-    // 使用tokio::select!实现优雅关闭
+    debug!("Starting server with tokio::select! for graceful shutdown");
     let server = Server::new(stdin, stdout, socket).serve(service);
 
     tokio::select! {
@@ -826,8 +893,22 @@ impl Backend {
     /// This method is called when a document is opened, changed, or saved.
     /// It compiles the document and publishes diagnostics.
     async fn on_change(&self, item: TextDocumentChange<'_>) {
+        debug!("Processing document change for: {}", item.uri);
+
         let rope = Rope::from_str(item.text);
+        debug!(
+            "Created rope with {} lines and {} chars",
+            rope.len_lines(),
+            rope.len_chars()
+        );
+
         let compile_result = compile(item.text);
+        debug!(
+            "Compilation completed with {} diagnostics and {} semantic errors",
+            compile_result.diagnostics.len(),
+            compile_result.semantic.errors.len()
+        );
+
         let mut diagnostics = compile_result
             .diagnostics
             .iter()
@@ -850,6 +931,7 @@ impl Backend {
                 })
             })
             .collect::<Vec<_>>();
+
         compile_result.semantic.errors.iter().for_each(|sem_err| {
             let span = sem_err.span;
             let start = offset_to_position(span.start as usize, &rope);
@@ -870,21 +952,34 @@ impl Backend {
             }
         });
 
-        // 检查服务器是否已关闭
+        debug!("Processed {} total diagnostics", diagnostics.len());
+
+        // Check if the server is shutting down
         if self.is_shutting_down() {
             debug!("Skipping diagnostics publish - server is shutting down");
             return;
         }
 
+        debug!(
+            "Publishing {} diagnostics for document: {}",
+            diagnostics.len(),
+            item.uri
+        );
+
         // Parse the URI string into a Uri object
         if let Ok(uri) = Uri::from_str(&item.uri) {
-            // 在发布诊断前再次检查服务器状态
+            // Double-check server status before publishing diagnostics
             if !self.is_shutting_down() {
-                // publish_diagnostics返回()而不是Result，所以直接调用
+                // publish_diagnostics returns () instead of Result, so call directly
                 self.client
                     .publish_diagnostics(uri, diagnostics, None)
                     .await;
+                debug!("Diagnostics published successfully");
+            } else {
+                debug!("Skipping diagnostics publish - server is shutting down");
             }
+        } else {
+            debug!("Failed to parse URI: {}", item.uri);
         }
         self.semanticast_map
             .insert(item.uri.clone(), compile_result);
