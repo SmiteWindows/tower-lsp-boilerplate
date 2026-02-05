@@ -27,5 +27,7 @@
   },
   "typescript.updateImportsOnFileMove.enabled": "always",
   "javascript.preferences.importModuleSpecifier": "relative",
-  "typescript.preferences.importModuleSpecifier": "relative"
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "trae.tab.enableRename": false,
+  "trae.tab.enableAutoImport": false
 }

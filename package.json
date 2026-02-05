@@ -2,7 +2,7 @@
   "name": "l-language-server",
   "version": "1.5.0",
   "description": "L language server",
-  "type": "module",
+  "type": "commonjs",
   "categories": [],
   "keywords": [
     "language-server",
@@ -23,6 +23,7 @@
     "dev:typecheck": "bun run --watch check-types",
     "package": "vsce package --no-dependencies",
     "lint": "oxlint -c oxlint.json .",
+    "fmt": "oxfmt build.js client/src/extension.ts",
     "fmt:check": "oxfmt --check build.js client/src/extension.ts"
   },
   "devDependencies": {
