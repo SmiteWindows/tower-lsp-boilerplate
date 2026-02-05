@@ -2,7 +2,9 @@
   "compilerOptions": {
     "moduleResolution": "bundler",
     "target": "es2024",
-    "lib": ["ESNext"],
+    "lib": ["ES2024"],
+    "module": "ESNext",
+    "types": ["node"],
     "outDir": "../dist",
     "rootDir": "src",
     "sourceMap": true
