@@ -7,6 +7,6 @@ dist/
 *.vsix
 .cache
 .claude
-.vscode
+
 nul
 cjlintignore.cfg
