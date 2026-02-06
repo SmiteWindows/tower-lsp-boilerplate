@@ -12,7 +12,19 @@
  * and more.
  */
 
-import { commands, ConfigurationChangeEvent, Disposable, ExtensionContext, OutputChannel, ProgressLocation, StatusBarAlignment, StatusBarItem, ThemeColor, window, workspace } from "vscode";
+import {
+  commands,
+  ConfigurationChangeEvent,
+  Disposable,
+  ExtensionContext,
+  OutputChannel,
+  ProgressLocation,
+  StatusBarAlignment,
+  StatusBarItem,
+  ThemeColor,
+  window,
+  workspace,
+} from "vscode";
 
 import {
   CloseAction,
@@ -66,18 +78,18 @@ let isDisposing = false;
 export async function activate(context: ExtensionContext) {
   // Create an output channel for tracing LSP communication
   const traceOutputChannel = window.createOutputChannel("L Language Server trace");
-  
+
   // Create a dedicated output channel for the extension
   outputChannel = window.createOutputChannel("L Language");
   context.subscriptions.push(outputChannel);
-  
+
   // Create status bar item
   statusBarItem = window.createStatusBarItem(StatusBarAlignment.Right, 100);
   statusBarItem.text = "$(sync~spin) L Language Server";
   statusBarItem.tooltip = "L Language Server is starting...";
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
-  
+
   // Log activation
   outputChannel.appendLine("[INFO] L Language extension is now active!");
 
@@ -85,7 +97,7 @@ export async function activate(context: ExtensionContext) {
   const config = workspace.getConfiguration("l-language-server");
   const maxProblems = config.get<number>("maxNumberOfProblems", 100);
   const customServerPath = config.get<string>("serverPath", "");
-  
+
   // Try to locate the server executable
   let serverCommand: string | undefined;
   const path = await import("path");
@@ -146,7 +158,9 @@ export async function activate(context: ExtensionContext) {
       "l-language-server",
     ];
 
-    outputChannel.appendLine(`[INFO] Searching for server in possible paths: ${possiblePaths.join(", ")}`);
+    outputChannel.appendLine(
+      `[INFO] Searching for server in possible paths: ${possiblePaths.join(", ")}`,
+    );
 
     // Find the first path that exists
     for (const possiblePath of possiblePaths) {
@@ -165,18 +179,22 @@ export async function activate(context: ExtensionContext) {
     // If none of the paths worked, use the fallback
     if (!serverCommand) {
       serverCommand = "l-language-server";
-      outputChannel.appendLine(`[INFO] No local server found, using fallback command: ${serverCommand}`);
+      outputChannel.appendLine(
+        `[INFO] No local server found, using fallback command: ${serverCommand}`,
+      );
     }
   }
 
   // Ensure the server command is properly formatted for the platform
   serverCommand = path.normalize(serverCommand || "l-language-server");
   outputChannel.appendLine(`[INFO] Final server command: ${serverCommand}`);
-  
+
   // Verify the server command exists
   try {
     if (!fs.existsSync(serverCommand) && !serverCommand.includes(path.sep)) {
-      outputChannel.appendLine(`[WARN] Server command '${serverCommand}' not found in PATH. Make sure the server is installed or configured correctly.`);
+      outputChannel.appendLine(
+        `[WARN] Server command '${serverCommand}' not found in PATH. Make sure the server is installed or configured correctly.`,
+      );
     }
   } catch (error) {
     outputChannel.appendLine(`[WARN] Could not verify server command: ${error}`);
@@ -226,15 +244,15 @@ export async function activate(context: ExtensionContext) {
       error: (error: Error, message: any, count: number) => {
         outputChannel.appendLine(`[ERROR] LSP Error (${count}): ${error.message || error}`);
         outputChannel.appendLine(`[ERROR] Message: ${JSON.stringify(message)}`);
-        outputChannel.appendLine(`[ERROR] Stack: ${error.stack || 'No stack trace available'}`);
-        
+        outputChannel.appendLine(`[ERROR] Stack: ${error.stack || "No stack trace available"}`);
+
         // Show error to user after multiple consecutive errors
         if (count >= 5) {
           window.showErrorMessage(
-            `L Language Server encountered ${count} errors. Check the "L Language" output channel for details.`
+            `L Language Server encountered ${count} errors. Check the "L Language" output channel for details.`,
           );
         }
-        
+
         return { action: ErrorAction.Continue }; // Continue running the server despite errors
       },
       // Handle when the LSP connection is closed
@@ -252,7 +270,7 @@ export async function activate(context: ExtensionContext) {
     serverOptions,
     clientOptions,
   );
-  
+
   // Add client to subscriptions so it's properly disposed
   context.subscriptions.push(client);
 
@@ -261,22 +279,22 @@ export async function activate(context: ExtensionContext) {
     updateStatusBar(state.newState);
   });
   context.subscriptions.push(stateChangeListener);
-  
+
   // Set up configuration change listener
   configChangeListener = workspace.onDidChangeConfiguration(handleConfigurationChange);
   context.subscriptions.push(configChangeListener);
-  
+
   // Register commands
   context.subscriptions.push(
     commands.registerCommand("l-language.restartServer", async () => {
       await restartServer();
-    })
+    }),
   );
-  
+
   // Start the language client
   try {
     outputChannel.appendLine("[INFO] Starting language client...");
-    
+
     // Show progress notification
     await window.withProgress(
       {
@@ -288,7 +306,7 @@ export async function activate(context: ExtensionContext) {
         // Start the client and wait for it to be ready
         await client.start();
         outputChannel.appendLine("[INFO] L Language Server started successfully");
-      }
+      },
     );
   } catch (error) {
     const errorMessage = `Failed to start L Language Server: ${error}`;
@@ -312,7 +330,7 @@ export async function activate(context: ExtensionContext) {
 export function deactivate(): Thenable<void> | undefined {
   // Set disposing flag to prevent further UI updates
   isDisposing = true;
-  
+
   // Clear any pending configuration change timer
   if (configChangeTimer) {
     clearTimeout(configChangeTimer);
@@ -353,7 +371,7 @@ function updateStatusBar(state: State) {
   if (isDisposing) {
     return;
   }
-  
+
   switch (state) {
     case State.Starting:
       statusBarItem.text = "$(sync~spin) L Language Server";
@@ -383,14 +401,14 @@ function handleConfigurationChange(event: ConfigurationChangeEvent) {
       outputChannel.appendLine("[INFO] Trace configuration changed, no restart needed");
       return;
     }
-    
+
     outputChannel.appendLine("[INFO] Configuration changed, scheduling server restart");
-    
+
     // Clear existing timer if any
     if (configChangeTimer) {
       clearTimeout(configChangeTimer);
     }
-    
+
     // Debounce: wait 1 second before restarting to avoid rapid restarts
     configChangeTimer = setTimeout(() => {
       restartServer();
@@ -408,14 +426,16 @@ async function restartServer() {
     outputChannel.appendLine("[WARN] Extension is being disposed, skipping restart");
     return;
   }
-  
+
   if (!client) {
     outputChannel.appendLine("[WARN] Cannot restart server: client not initialized");
     return;
   }
 
   const currentState = client.state;
-  outputChannel.appendLine(`[INFO] Restarting L Language Server (current state: ${State[currentState]})`);
+  outputChannel.appendLine(
+    `[INFO] Restarting L Language Server (current state: ${State[currentState]})`,
+  );
 
   try {
     // Show progress notification
@@ -432,7 +452,9 @@ async function restartServer() {
           await client.stop();
           outputChannel.appendLine("[INFO] Server stopped successfully");
         } else if (currentState === State.Starting) {
-          outputChannel.appendLine("[WARN] Server is currently starting, waiting for it to complete...");
+          outputChannel.appendLine(
+            "[WARN] Server is currently starting, waiting for it to complete...",
+          );
           try {
             await new Promise<void>((resolve) => {
               const disposable = client.onDidChangeState((state) => {
@@ -455,7 +477,9 @@ async function restartServer() {
               await client.stop();
               outputChannel.appendLine("[INFO] Server stopped successfully");
             } else {
-              outputChannel.appendLine("[WARN] Server failed to start, proceeding with restart attempt");
+              outputChannel.appendLine(
+                "[WARN] Server failed to start, proceeding with restart attempt",
+              );
             }
           } catch (error) {
             outputChannel.appendLine(`[WARN] Server failed to start during wait: ${error}`);
@@ -465,7 +489,7 @@ async function restartServer() {
         // Start the client
         outputChannel.appendLine("[INFO] Starting new server instance...");
         await client.start();
-        
+
         // Wait for the client to be ready
         await new Promise<void>((resolve) => {
           const disposable = client.onDidChangeState((state) => {
@@ -485,7 +509,7 @@ async function restartServer() {
             }
           });
         });
-      }
+      },
     );
   } catch (error) {
     const errorMessage = `Failed to restart L Language Server: ${error}`;
