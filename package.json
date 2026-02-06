@@ -40,12 +40,39 @@
         "id": "l",
         "extensions": [
           ".l"
-        ]
+        ],
+        "aliases": [
+          "L Language",
+          "l"
+        ],
+        "configuration": "./language-configuration.json"
       }
     ],
+    "grammars": [
+      {
+        "language": "l",
+        "scopeName": "source.l",
+        "path": "./syntaxes/l.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "l-language.restartServer",
+        "title": "Restart Server",
+        "category": "L Language"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "l-language.restartServer",
+          "when": "editorLangId == l"
+        }
+      ]
+    },
     "configuration": {
       "type": "object",
-      "title": "l-language-server",
+      "title": "L Language",
       "properties": {
         "l-language-server.trace.server": {
           "type": "string",
@@ -62,6 +89,16 @@
           ],
           "default": "off",
           "description": "Traces the communication between VS Code and the language server."
+        },
+        "l-language-server.maxNumberOfProblems": {
+          "type": "number",
+          "default": 100,
+          "description": "Controls the maximum number of problems produced by the server."
+        },
+        "l-language-server.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the L language server executable. If empty, the extension will try to find it automatically."
         }
       }
     }

@@ -209,11 +209,21 @@ impl LanguageServer for Backend {
     /// This notification is sent from the client to the server when a document is saved.
     /// The server recompiles the document to ensure the saved version is analyzed.
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        self.on_change(TextDocumentChange {
-            text: params.text.as_ref().unwrap_or(&String::new()),
-            uri: params.text_document.uri.to_string(),
-        })
-        .await;
+        let uri = params.text_document.uri.to_string();
+        let text = if let Some(text) = params.text {
+            text
+        } else {
+            // If no text provided, use the stored document content
+            if let Some(rope) = self.document_map.get(&uri) {
+                rope.to_string()
+            } else {
+                debug!("No stored content for document: {}", uri);
+                return;
+            }
+        };
+
+        self.on_change(TextDocumentChange { text: &text, uri })
+            .await;
         debug!("file saved!");
     }
 
@@ -340,7 +350,8 @@ impl LanguageServer for Backend {
     /// This request is sent from the client to the server to get inlay hints,
     /// which are additional information displayed inline with the code.
     async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
-        Ok(self.build_inlay_hints(params.text_document.uri.as_ref()))
+        let uri = params.text_document.uri.to_string();
+        Ok(self.build_inlay_hints(&uri))
     }
 
     /// Provide code completion items at a specific position in a document.
@@ -464,6 +475,67 @@ impl Backend {
     fn is_shutting_down(&self) -> bool {
         self.is_shutdown.load(std::sync::atomic::Ordering::Acquire)
     }
+
+    /// Convert SymbolKind to semantic token type.
+    ///
+    /// Token type indices correspond to LEGEND_TYPE order:
+    /// 0: FUNCTION, 1: VARIABLE, 2: PARAMETER, 3: STRUCT, 4: PROPERTY (field)
+    fn symbol_kind_to_token_type(&self, kind: SymbolKind) -> u32 {
+        match kind {
+            SymbolKind::Function => 0,
+            SymbolKind::Variable => 1,
+            SymbolKind::Parameter => 2,
+            SymbolKind::Struct => 3,
+            SymbolKind::Field => 4,
+        }
+    }
+
+    /// Convert incomplete tokens to LSP SemanticToken format with delta encoding.
+    ///
+    /// This method takes a list of tokens with (start, length, token_type) and
+    /// converts them to the LSP SemanticToken format with delta encoding.
+    fn convert_to_semantic_tokens(
+        &self,
+        incomplete_tokens: Vec<(usize, usize, u32)>,
+        rope: &Rope,
+    ) -> Option<Vec<SemanticToken>> {
+        let mut tokens = incomplete_tokens;
+        tokens.sort_by(|a, b| a.0.cmp(&b.0));
+
+        let mut pre_line: u32 = 0;
+        let mut pre_start: u32 = 0;
+
+        let semantic_tokens = tokens
+            .iter()
+            .filter_map(|(start, length, token_type)| {
+                let line = rope.try_byte_to_line(*start).ok()? as u32;
+                let line_start_byte = rope.try_line_to_byte(line as usize).ok()?;
+                let char_offset = *start - line_start_byte;
+
+                let delta_line = line - pre_line;
+                let delta_start = if delta_line == 0 {
+                    char_offset as u32 - pre_start
+                } else {
+                    char_offset as u32
+                };
+
+                let token = SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length: *length as u32,
+                    token_type: *token_type,
+                    token_modifiers_bitset: 0,
+                };
+
+                pre_line = line;
+                pre_start = char_offset as u32;
+
+                Some(token)
+            })
+            .collect::<Vec<_>>();
+
+        Some(semantic_tokens)
+    }
     /// Format the text of a document.
     ///
     /// This method uses the l_lang formatter to format the entire document
@@ -502,9 +574,10 @@ impl Backend {
                 {
                     return None;
                 }
-                let span = semantic_result.semantic.get_symbol_span(symbol_id);
-                let end = offset_to_position(span.end as usize, &rope)?;
-                let inly_hint_parts = match type_info.ty {
+                // Get the symbol definition span (not the binding span)
+                let symbol_span = semantic_result.semantic.symbol_spans.get(symbol_id)?;
+                let end = offset_to_position(symbol_span.end as usize, &rope)?;
+                let inlay_hint_parts = match type_info.ty {
                     Type::Struct(id) => {
                         let mut parts = vec![];
                         parts.push(InlayHintLabelPart {
@@ -538,7 +611,7 @@ impl Backend {
                 };
                 Some(InlayHint {
                     position: Position::new(end.line, end.character),
-                    label: inly_hint_parts,
+                    label: inlay_hint_parts,
                     kind: Some(InlayHintKind::TYPE),
                     text_edits: None,
                     tooltip: None,
@@ -568,6 +641,37 @@ impl Backend {
 
         let compilation_result = self.semanticast_map.get(&uri)?;
         let offset = position_to_offset(position, &rope)?;
+
+        // First check if cursor is on a reference (not a definition)
+        if let Some(interval) = compilation_result
+            .semantic
+            .span_to_reference
+            .find(offset, offset + 1)
+            .next()
+        {
+            let ref_id = interval.val;
+
+            // Check if ref_id is within bounds
+            if ref_id >= compilation_result.semantic.references.len() {
+                return None;
+            }
+
+            let symbol_id = compilation_result.semantic.references[ref_id]?;
+            let symbol_span = compilation_result.semantic.get_symbol_span(symbol_id);
+            let start = offset_to_position(symbol_span.start as usize, &rope)?;
+            let end = offset_to_position(symbol_span.end as usize, &rope)?;
+            let location = Location::new(
+                params
+                    .text_document_position_params
+                    .text_document
+                    .uri
+                    .clone(),
+                Range::new(start, end),
+            );
+            return Some(GotoDefinitionResponse::Scalar(location));
+        }
+
+        // If not on a reference, check if cursor is on a symbol definition
         if let Some(interval) = compilation_result
             .semantic
             .span_to_symbol
@@ -580,7 +684,6 @@ impl Backend {
             }
             let start = offset_to_position(interval.start, &rope)?;
             let end = offset_to_position(interval.stop, &rope)?;
-            // Use the URI directly as it's already in the correct format
             let location = Location::new(
                 params
                     .text_document_position_params
@@ -590,34 +693,9 @@ impl Backend {
                 Range::new(start, end),
             );
             return Some(GotoDefinitionResponse::Scalar(location));
-        };
-        let ref_id = compilation_result
-            .semantic
-            .span_to_reference
-            .find(offset, offset + 1)
-            .next()?
-            .val;
-
-        // Check if ref_id is within bounds
-        if ref_id >= compilation_result.semantic.references.len() {
-            return None;
         }
 
-        let symbol_id = compilation_result.semantic.references[ref_id]?;
-        let symbol_span = compilation_result.semantic.get_symbol_span(symbol_id);
-        let start = offset_to_position(symbol_span.start as usize, &rope)?;
-        let end = offset_to_position(symbol_span.end as usize, &rope)?;
-        // Use the URI directly as it's already in the correct format
-        let location = Location::new(
-            params
-                .text_document_position_params
-                .text_document
-                .uri
-                .clone(),
-            Range::new(start, end),
-        );
-
-        Some(GotoDefinitionResponse::Scalar(location))
+        None
     }
 
     /// Get all references to a symbol at a given position.
@@ -628,7 +706,7 @@ impl Backend {
         &self,
         uri: String,
         position: Position,
-        include_self: bool,
+        include_declaration: bool,
     ) -> Option<Vec<Location>> {
         let rope = self.document_map.get(&uri)?;
         let compilation_result = self.semanticast_map.get(&uri)?;
@@ -639,7 +717,7 @@ impl Backend {
         let mut references = Vec::new();
         // Parse the URI string into a Uri object
         if let Ok(uri_obj) = Uri::from_str(&uri) {
-            if include_self {
+            if include_declaration {
                 // Include the symbol definition itself
                 let symbol_span = compilation_result.semantic.get_symbol_span(symbol_id);
                 let start = offset_to_position(symbol_span.start as usize, &rope)?;
@@ -763,6 +841,53 @@ impl Backend {
 
         let mut items = Vec::new();
 
+        // Helper function to create completion items from symbols
+        let create_symbol_completions = |semantic_result: &CompileResult, rope: &Rope| {
+            let bindings = &semantic_result.semantic.bindings;
+            bindings
+                .iter_enumerated()
+                .filter_map(|(symbol_id, type_info)| {
+                    let symbol_kind = semantic_result.semantic.get_symbol_kind(symbol_id);
+                    let span = semantic_result.semantic.get_symbol_span(symbol_id);
+
+                    // Check if span is valid
+                    if span.start >= span.end {
+                        return None;
+                    }
+
+                    let name_slice = rope.byte_slice(span.start as usize..span.end as usize);
+                    if let Ok(name) =
+                        std::str::from_utf8(name_slice.bytes().collect::<Vec<_>>().as_slice())
+                    {
+                        let (kind, detail) = match symbol_kind {
+                            l_lang::SymbolKind::Variable => (
+                                Some(CompletionItemKind::VARIABLE),
+                                Some(format!(
+                                    ": {}",
+                                    type_info.ty.format_literal_type(&semantic_result.semantic)
+                                )),
+                            ),
+                            l_lang::SymbolKind::Function => {
+                                (Some(CompletionItemKind::FUNCTION), None)
+                            }
+                            l_lang::SymbolKind::Struct => (Some(CompletionItemKind::STRUCT), None),
+                            _ => (None, None),
+                        };
+
+                        Some(CompletionItem {
+                            label: name.to_string(),
+                            kind,
+                            detail,
+                            insert_text: Some(name.to_string()),
+                            ..Default::default()
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+
         // Try to find the AST node at the current position
         if let Some(nearest_node) =
             find_node_at_offset(semantic_result.program.file(), offset as u32)
@@ -787,103 +912,12 @@ impl Backend {
                 }
                 _ => {
                     // Default: suggest all available symbols
-                    let bindings = &semantic_result.semantic.bindings;
-                    items.extend(bindings.iter_enumerated().filter_map(
-                        |(symbol_id, type_info)| {
-                            let symbol_kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                            let span = semantic_result.semantic.get_symbol_span(symbol_id);
-
-                            // Check if span is valid
-                            if span.start >= span.end {
-                                return None;
-                            }
-
-                            let name_slice =
-                                rope.byte_slice(span.start as usize..span.end as usize);
-                            if let Ok(name) = std::str::from_utf8(
-                                name_slice.bytes().collect::<Vec<_>>().as_slice(),
-                            ) {
-                                let (kind, detail) = match symbol_kind {
-                                    l_lang::SymbolKind::Variable => (
-                                        Some(CompletionItemKind::VARIABLE),
-                                        Some(format!(
-                                            ": {}",
-                                            type_info
-                                                .ty
-                                                .format_literal_type(&semantic_result.semantic)
-                                        )),
-                                    ),
-                                    l_lang::SymbolKind::Function => {
-                                        (Some(CompletionItemKind::FUNCTION), None)
-                                    }
-                                    l_lang::SymbolKind::Struct => {
-                                        (Some(CompletionItemKind::STRUCT), None)
-                                    }
-                                    _ => (None, None),
-                                };
-
-                                Some(CompletionItem {
-                                    label: name.to_string(),
-                                    kind,
-                                    detail,
-                                    insert_text: Some(name.to_string()),
-                                    ..Default::default()
-                                })
-                            } else {
-                                None
-                            }
-                        },
-                    ));
+                    items.extend(create_symbol_completions(&semantic_result, &rope));
                 }
             }
         } else {
             // No node found, suggest all available symbols
-            let bindings = &semantic_result.semantic.bindings;
-            items.extend(
-                bindings
-                    .iter_enumerated()
-                    .filter_map(|(symbol_id, type_info)| {
-                        let symbol_kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                        let span = semantic_result.semantic.get_symbol_span(symbol_id);
-
-                        // Check if span is valid
-                        if span.start >= span.end {
-                            return None;
-                        }
-
-                        let name_slice = rope.byte_slice(span.start as usize..span.end as usize);
-                        if let Ok(name) =
-                            std::str::from_utf8(name_slice.bytes().collect::<Vec<_>>().as_slice())
-                        {
-                            let (kind, detail) = match symbol_kind {
-                                l_lang::SymbolKind::Variable => (
-                                    Some(CompletionItemKind::VARIABLE),
-                                    Some(format!(
-                                        ": {}",
-                                        type_info.ty.format_literal_type(&semantic_result.semantic)
-                                    )),
-                                ),
-                                l_lang::SymbolKind::Function => {
-                                    (Some(CompletionItemKind::FUNCTION), None)
-                                }
-                                l_lang::SymbolKind::Struct => {
-                                    (Some(CompletionItemKind::STRUCT), None)
-                                }
-                                _ => (None, None),
-                            };
-
-                            Some(CompletionItem {
-                                label: name.to_string(),
-                                kind,
-                                detail,
-                                insert_text: Some(name.to_string()),
-                                ..Default::default()
-                            })
-                        } else {
-                            None
-                        }
-                    }),
-            );
+            items.extend(create_symbol_completions(&semantic_result, &rope));
         }
         Some(items)
     }
@@ -1002,13 +1036,7 @@ impl Backend {
         // Add symbol definitions
         for (symbol_id, span) in semantic_result.semantic.symbol_spans.iter_enumerated() {
             let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-            let token_type = match kind {
-                SymbolKind::Function => 0,  // FUNCTION
-                SymbolKind::Variable => 1,  // VARIABLE
-                SymbolKind::Parameter => 2, // PARAMETER
-                SymbolKind::Struct => 3,    // STRUCT
-                SymbolKind::Field => 4,     // PROPERTY
-            };
+            let token_type = self.symbol_kind_to_token_type(kind);
             incomplete_tokens.push((
                 span.start as usize,
                 (span.end - span.start) as usize,
@@ -1025,13 +1053,7 @@ impl Backend {
 
             if let Some(symbol_id) = semantic_result.semantic.references[ref_id] {
                 let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                let token_type = match kind {
-                    SymbolKind::Function => 0,  // FUNCTION
-                    SymbolKind::Variable => 1,  // VARIABLE
-                    SymbolKind::Parameter => 2, // PARAMETER
-                    SymbolKind::Struct => 3,    // STRUCT
-                    SymbolKind::Field => 4,     // PROPERTY
-                };
+                let token_type = self.symbol_kind_to_token_type(kind);
                 incomplete_tokens.push((
                     span.start as usize,
                     (span.end - span.start) as usize,
@@ -1040,44 +1062,7 @@ impl Backend {
             }
         }
 
-        // Sort by start position
-        incomplete_tokens.sort_by(|a, b| a.0.cmp(&b.0));
-
-        // Convert to LSP SemanticToken format with delta encoding
-        let mut pre_line: u32 = 0;
-        let mut pre_start: u32 = 0;
-
-        let semantic_tokens = incomplete_tokens
-            .iter()
-            .filter_map(|(start, length, token_type)| {
-                // Convert byte offset to line and character
-                let line = rope.try_byte_to_line(*start).ok()? as u32;
-                let line_start_byte = rope.try_line_to_byte(line as usize).ok()?;
-                let char_offset = *start - line_start_byte;
-
-                let delta_line = line - pre_line;
-                let delta_start = if delta_line == 0 {
-                    char_offset as u32 - pre_start
-                } else {
-                    char_offset as u32
-                };
-
-                let token = SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length: *length as u32,
-                    token_type: *token_type,
-                    token_modifiers_bitset: 0,
-                };
-
-                pre_line = line;
-                pre_start = char_offset as u32;
-
-                Some(token)
-            })
-            .collect::<Vec<_>>();
-
-        Some(semantic_tokens)
+        self.convert_to_semantic_tokens(incomplete_tokens, &rope)
     }
 
     /// Build semantic tokens for a specific range in a document.
@@ -1100,13 +1085,7 @@ impl Backend {
             let token_start = span.start as usize;
             if token_start >= start_offset && token_start < end_offset {
                 let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                let token_type = match kind {
-                    SymbolKind::Function => 0,
-                    SymbolKind::Variable => 1,
-                    SymbolKind::Parameter => 2,
-                    SymbolKind::Struct => 3,
-                    SymbolKind::Field => 4,
-                };
+                let token_type = self.symbol_kind_to_token_type(kind);
                 incomplete_tokens.push((token_start, (span.end - span.start) as usize, token_type));
             }
         }
@@ -1120,54 +1099,12 @@ impl Backend {
                 && let Some(symbol_id) = semantic_result.semantic.references[ref_id]
             {
                 let kind = semantic_result.semantic.get_symbol_kind(symbol_id);
-                let token_type = match kind {
-                    SymbolKind::Function => 0,
-                    SymbolKind::Variable => 1,
-                    SymbolKind::Parameter => 2,
-                    SymbolKind::Struct => 3,
-                    SymbolKind::Field => 4,
-                };
+                let token_type = self.symbol_kind_to_token_type(kind);
                 incomplete_tokens.push((token_start, (span.end - span.start) as usize, token_type));
             }
         }
 
-        // Sort by start position
-        incomplete_tokens.sort_by(|a, b| a.0.cmp(&b.0));
-
-        // Convert to LSP SemanticToken format with delta encoding
-        let mut pre_line: u32 = 0;
-        let mut pre_start: u32 = 0;
-
-        let semantic_tokens = incomplete_tokens
-            .iter()
-            .filter_map(|(start, length, token_type)| {
-                let line = rope.try_byte_to_line(*start).ok()? as u32;
-                let line_start_byte = rope.try_line_to_byte(line as usize).ok()?;
-                let char_offset = *start - line_start_byte;
-
-                let delta_line = line - pre_line;
-                let delta_start = if delta_line == 0 {
-                    char_offset as u32 - pre_start
-                } else {
-                    char_offset as u32
-                };
-
-                let token = SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length: *length as u32,
-                    token_type: *token_type,
-                    token_modifiers_bitset: 0,
-                };
-
-                pre_line = line;
-                pre_start = char_offset as u32;
-
-                Some(token)
-            })
-            .collect::<Vec<_>>();
-
-        Some(semantic_tokens)
+        self.convert_to_semantic_tokens(incomplete_tokens, &rope)
     }
 }
 

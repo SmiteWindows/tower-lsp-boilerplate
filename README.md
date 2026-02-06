@@ -1,4 +1,6 @@
-# boilerplate for a rust language server powered by `tower-lsp-server`
+# L Language Server
+
+A Language Server Protocol (LSP) implementation for the L programming language, built with Rust and tower-lsp-server.
 
 > [!note]
 > This repo uses [l-lang](https://github.com/IWANABETHATGUY/l-lang), a simple statically-typed programming language with structs, functions, and expressions.
@@ -78,6 +80,8 @@ For other editor, please refer the related manual, you could skip steps above.
 
 ## Features
 
+### Language Features
+
 This Language Server Protocol implementation for l-lang provides comprehensive IDE support with the following features:
 
 ### Semantic Tokens
@@ -131,3 +135,127 @@ https://github.com/user-attachments/assets/79b3f40b-304d-4cf5-8c6d-ac019eb4090f
 ### Format
 
 https://github.com/user-attachments/assets/06439fd6-ebf9-414f-86da-95f3b9fa276a
+
+### Hover Information
+
+Show symbol information on hover.
+
+### Document Symbols
+
+Navigate symbols within a document.
+
+### Workspace Symbols
+
+Search for symbols across the workspace.
+
+### Code Actions
+
+Quick fixes and refactoring options.
+
+### Signature Help
+
+Display function signatures.
+
+### Extension Features
+
+- **Status Bar Indicator**: Shows the current status of the language server
+- **Output Channel**: Dedicated channel for extension logging
+- **Configuration Options**: Customizable settings for the language server
+- **Progress Reporting**: Visual feedback for long-running operations
+- **Error Handling**: Robust error handling with user-friendly messages
+- **Server Restart**: Command to restart the language server
+
+## Installation
+
+### Prerequisites
+
+- [Visual Studio Code](https://code.visualstudio.com/) version 1.107.0 or higher
+- [Rust](https://rustup.rs/) (for building the language server)
+
+### Building the Language Server
+
+```bash
+# Clone the repository
+git clone https://github.com/IWANABETHATGUY/tower-lsp-boilerplate.git
+cd tower-lsp-boilerplate
+
+# Build the language server
+cargo build --release
+```
+
+### Installing the Extension
+
+1. Open VS Code
+2. Go to Extensions (Ctrl+Shift+X)
+3. Click the "..." menu and select "Install from VSIX..."
+4. Select the `l-language-server-1.5.0.vsix` file
+5. Restart VS Code
+
+## Configuration
+
+The extension can be configured through VS Code's settings. The following options are available:
+
+- `l-language-server.trace.server`: Controls the level of tracing for the LSP communication
+  - `off`: No traces
+  - `messages`: Error only
+  - `verbose`: Full log
+- `l-language-server.maxNumberOfProblems`: Controls the maximum number of problems produced by the server (default: 100)
+- `l-language-server.serverPath`: Path to the L language server executable. If empty, the extension will try to find it automatically.
+
+## Usage
+
+1. Create a new file with the `.l` extension
+2. Start writing L language code
+3. The language server will automatically provide features like completion, diagnostics, and more
+
+## Development
+
+### Project Structure
+
+```
+tower-lsp-boilerplate/
+├── src/                 # Rust language server implementation
+│   └── main.rs         # Main language server code
+├── client/             # VS Code extension client
+│   ├── src/
+│   │   └── extension.ts # Extension entry point
+│   └── package.json    # Client dependencies
+├── syntaxes/           # TextMate grammar for syntax highlighting
+│   └── l.tmLanguage.json
+├── language-configuration.json # Language configuration
+├── package.json        # Extension manifest
+└── Cargo.toml         # Rust dependencies
+```
+
+### Building the Extension
+
+```bash
+# Install dependencies
+cd client && bun install
+
+# Build the extension
+bun run compile
+
+# Package the extension
+bun run package
+```
+
+### Running in Development Mode
+
+1. Open the project in VS Code
+2. Press F5 to launch a new VS Code window with the extension loaded
+3. Open an `.l` file to test the extension
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- [tower-lsp-server](https://github.com/ebkalibon/tower-lsp) for the LSP framework
+- [l-lang](https://github.com/IWANABETHATGUY/l-lang) for the L language implementation
+- [VS Code](https://code.visualstudio.com/) for the extension API

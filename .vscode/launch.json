@@ -33,6 +33,7 @@
         "RUST_LOG": "debug"
       }
     },
+   
     // {
     //   "type": "node",
     //   "request": "attach",
@@ -58,7 +59,7 @@
     {
       "name": "Client + Server",
       "configurations": [
-        "Launch Client"
+        "Launch Extension"
         // "Attach to Server"
       ]
     }
