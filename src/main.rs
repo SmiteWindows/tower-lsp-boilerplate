@@ -42,7 +42,7 @@ use tower_lsp_server::{Client, LanguageServer, LspService, Server};
 /// This struct maintains the state of the language server, including:
 /// - Client connection for sending notifications and requests
 /// - Document content mapping (URI -> Rope)
-/// - Semantic analysis results mapping (URI -> CompileResult)
+/// - Semantic analysis results mapping (URI -> `CompileResult`)
 /// - Shutdown flag for graceful termination
 struct Backend {
     /// The LSP client connection
@@ -83,13 +83,13 @@ impl LanguageServer for Backend {
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
                     trigger_characters: Some(vec![".".to_string()]),
-                    work_done_progress_options: Default::default(),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
                     all_commit_characters: None,
                     completion_item: None,
                 }),
                 execute_command_provider: Some(ExecuteCommandOptions {
                     commands: vec!["dummy.do_something".to_string()],
-                    work_done_progress_options: Default::default(),
+                    work_done_progress_options: WorkDoneProgressOptions::default(),
                 }),
 
                 workspace: Some(WorkspaceServerCapabilities {
@@ -217,7 +217,7 @@ impl LanguageServer for Backend {
             if let Some(rope) = self.document_map.get(&uri) {
                 rope.to_string()
             } else {
-                debug!("No stored content for document: {}", uri);
+                debug!("No stored content for document: {uri}");
                 return;
             }
         };
@@ -258,7 +258,7 @@ impl LanguageServer for Backend {
             uri, position.line, position.character
         );
 
-        let definition = self.get_definition(params);
+        let definition = self.get_definition(&params);
 
         if definition.is_some() {
             debug!(
@@ -288,7 +288,7 @@ impl LanguageServer for Backend {
             uri, position.line, position.character, include_declaration
         );
 
-        let references = self.get_references(uri.clone(), position, include_declaration);
+        let references = self.get_references(uri.as_str(), position, include_declaration);
 
         if let Some(refs) = &references {
             debug!(
@@ -371,13 +371,13 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri.to_string();
         let position = params.text_document_position.position;
-        let new_name = params.new_name.clone();
+        let new_name = params.new_name;
         debug!(
             "Rename request for {} at line {}, col {} to '{}'",
             uri, position.line, position.character, new_name
         );
 
-        let workspace_edit = self.get_rename_edit(uri.clone(), position, new_name);
+        let workspace_edit = self.get_rename_edit(uri.as_str(), position, &new_name);
 
         if workspace_edit.is_some() {
             debug!("Created workspace edit for rename operation");
@@ -393,7 +393,7 @@ impl LanguageServer for Backend {
     /// This request is sent from the client to the server to format the entire document
     /// according to the language's formatting rules.
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        Ok(self.format_text(params))
+        Ok(self.format_text(&params))
     }
 
     async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
@@ -436,7 +436,7 @@ async fn main() {
                 let _ = shutdown_tx.send(());
             }
             Err(err) => {
-                eprintln!("Unable to listen for shutdown signal: {}", err);
+                eprintln!("Unable to listen for shutdown signal: {err}");
             }
         }
     });
@@ -457,7 +457,7 @@ async fn main() {
     let server = Server::new(stdin, stdout, socket).serve(service);
 
     tokio::select! {
-        _ = server => {
+        () = server => {
             debug!("Server completed normally");
         }
         _ = &mut shutdown_rx => {
@@ -476,11 +476,11 @@ impl Backend {
         self.is_shutdown.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// Convert SymbolKind to semantic token type.
+    /// Convert `SymbolKind` to semantic token type.
     ///
-    /// Token type indices correspond to LEGEND_TYPE order:
+    /// Token type indices correspond to `LEGEND_TYPE` order:
     /// 0: FUNCTION, 1: VARIABLE, 2: PARAMETER, 3: STRUCT, 4: PROPERTY (field)
-    fn symbol_kind_to_token_type(&self, kind: SymbolKind) -> u32 {
+    const fn symbol_kind_to_token_type(&self, kind: SymbolKind) -> u32 {
         match kind {
             SymbolKind::Function => 0,
             SymbolKind::Variable => 1,
@@ -490,68 +490,72 @@ impl Backend {
         }
     }
 
-    /// Convert incomplete tokens to LSP SemanticToken format with delta encoding.
+    /// Convert incomplete tokens to LSP `SemanticToken` format with delta encoding.
     ///
-    /// This method takes a list of tokens with (start, length, token_type) and
-    /// converts them to the LSP SemanticToken format with delta encoding.
+    /// This method takes a list of tokens with (start, length, `token_type`) and
+    /// converts them to the LSP `SemanticToken` format with delta encoding.
     fn convert_to_semantic_tokens(
         &self,
         incomplete_tokens: Vec<(usize, usize, u32)>,
         rope: &Rope,
-    ) -> Option<Vec<SemanticToken>> {
+    ) -> Vec<SemanticToken> {
         let mut tokens = incomplete_tokens;
         tokens.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut pre_line: u32 = 0;
         let mut pre_start: u32 = 0;
 
-        let semantic_tokens = tokens
+        tokens
             .iter()
-            .filter_map(|(start, length, token_type)| {
-                let line = rope.try_byte_to_line(*start).ok()? as u32;
-                let line_start_byte = rope.try_line_to_byte(line as usize).ok()?;
+            .map(|(start, length, token_type)| {
+                let line = u32::try_from(rope.try_byte_to_line(*start).expect("byte out of range"))
+                    .expect("start out of range");
+                let line_start_byte = rope
+                    .try_line_to_byte(line as usize)
+                    .expect("line out of range");
                 let char_offset = *start - line_start_byte;
 
                 let delta_line = line - pre_line;
                 let delta_start = if delta_line == 0 {
-                    char_offset as u32 - pre_start
+                    u32::try_from(char_offset).expect("char_offset out of range") - pre_start
                 } else {
-                    char_offset as u32
+                    u32::try_from(char_offset).expect("char_offset out of range")
                 };
 
                 let token = SemanticToken {
                     delta_line,
                     delta_start,
-                    length: *length as u32,
+                    length: u32::try_from(*length).expect("length out of range"),
                     token_type: *token_type,
                     token_modifiers_bitset: 0,
                 };
 
                 pre_line = line;
-                pre_start = char_offset as u32;
+                pre_start = u32::try_from(char_offset).expect("char_offset out of range");
 
-                Some(token)
+                token
             })
-            .collect::<Vec<_>>();
-
-        Some(semantic_tokens)
+            .collect::<Vec<_>>()
     }
     /// Format the text of a document.
     ///
-    /// This method uses the l_lang formatter to format the entire document
+    /// This method uses the `l_lang` formatter to format the entire document
     /// and returns the text edits needed to apply the formatting.
-    fn format_text(&self, params: DocumentFormattingParams) -> Option<Vec<TextEdit>> {
+    fn format_text(&self, params: &DocumentFormattingParams) -> Option<Vec<TextEdit>> {
         let uri = params.text_document.uri.to_string();
         let rope = self.document_map.get(&uri)?;
-        let semantic_result = self.semanticast_map.get(&uri)?;
         let formatter = Formatter::new(80);
-        let formatted_text = formatter.format(semantic_result.program.file(), &rope.to_string());
+        let formatted_text = formatter.format(
+            self.semanticast_map.get(&uri)?.program.file(),
+            &rope.to_string(),
+        );
         Some(vec![TextEdit {
             range: Range {
                 start: Position::new(0, 0),
                 end: Position::new(
-                    rope.len_lines() as u32,
-                    rope.line(rope.len_lines() - 1).len_chars() as u32,
+                    u32::try_from(rope.len_lines()).expect("len_lines out of range"),
+                    u32::try_from(rope.line(rope.len_lines() - 1).len_chars())
+                        .expect("len_chars out of range"),
                 ),
             },
             new_text: formatted_text,
@@ -629,7 +633,7 @@ impl Backend {
     ///
     /// This method finds the symbol at the given position and returns
     /// the location of its definition.
-    fn get_definition(&self, params: GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
+    fn get_definition(&self, params: &GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
         let uri = params
             .text_document_position_params
             .text_document
@@ -704,19 +708,19 @@ impl Backend {
     /// all locations where this symbol is referenced.
     fn get_references(
         &self,
-        uri: String,
+        uri: &str,
         position: Position,
         include_declaration: bool,
     ) -> Option<Vec<Location>> {
-        let rope = self.document_map.get(&uri)?;
-        let compilation_result = self.semanticast_map.get(&uri)?;
+        let rope = self.document_map.get(uri)?;
+        let compilation_result = self.semanticast_map.get(uri)?;
         let offset = position_to_offset(position, &rope)?;
         let symbol_id = compilation_result.semantic.get_symbol_at(offset);
         let symbol_id = symbol_id?;
 
         let mut references = Vec::new();
         // Parse the URI string into a Uri object
-        if let Ok(uri_obj) = Uri::from_str(&uri) {
+        if let Ok(uri_obj) = Uri::from_str(uri) {
             if include_declaration {
                 // Include the symbol definition itself
                 let symbol_span = compilation_result.semantic.get_symbol_span(symbol_id);
@@ -748,23 +752,23 @@ impl Backend {
     /// and creates a workspace edit that replaces them with the new name.
     fn get_rename_edit(
         &self,
-        uri: String,
+        uri: &str,
         position: Position,
-        new_name: String,
+        new_name: &str,
     ) -> Option<WorkspaceEdit> {
-        let all_reference = self.get_references(uri.clone(), position, true)?;
+        let all_reference = self.get_references(uri, position, true)?;
 
         let edits = all_reference
             .into_iter()
             .map(|item| TextEdit {
                 range: item.range,
-                new_text: new_name.clone(),
+                new_text: new_name.to_string(),
             })
             .collect::<Vec<_>>();
 
         // Create workspace edit with the text edits
         // Parse the URI string into a Uri object
-        if let Ok(parsed_uri) = Uri::from_str(&uri) {
+        if let Ok(parsed_uri) = Uri::from_str(uri) {
             let mut edit_map = std::collections::HashMap::new();
             edit_map.insert(parsed_uri, edits);
 
@@ -856,42 +860,45 @@ impl Backend {
                     }
 
                     let name_slice = rope.byte_slice(span.start as usize..span.end as usize);
-                    if let Ok(name) =
-                        std::str::from_utf8(name_slice.bytes().collect::<Vec<_>>().as_slice())
-                    {
-                        let (kind, detail) = match symbol_kind {
-                            l_lang::SymbolKind::Variable => (
-                                Some(CompletionItemKind::VARIABLE),
-                                Some(format!(
-                                    ": {}",
-                                    type_info.ty.format_literal_type(&semantic_result.semantic)
-                                )),
-                            ),
-                            l_lang::SymbolKind::Function => {
-                                (Some(CompletionItemKind::FUNCTION), None)
-                            }
-                            l_lang::SymbolKind::Struct => (Some(CompletionItemKind::STRUCT), None),
-                            _ => (None, None),
-                        };
 
-                        Some(CompletionItem {
-                            label: name.to_string(),
-                            kind,
-                            detail,
-                            insert_text: Some(name.to_string()),
-                            ..Default::default()
-                        })
-                    } else {
-                        None
-                    }
+                    std::str::from_utf8(name_slice.bytes().collect::<Vec<_>>().as_slice()).map_or(
+                        None,
+                        |name| {
+                            let (kind, detail) = match symbol_kind {
+                                l_lang::SymbolKind::Variable => (
+                                    Some(CompletionItemKind::VARIABLE),
+                                    Some(format!(
+                                        ": {}",
+                                        type_info.ty.format_literal_type(&semantic_result.semantic)
+                                    )),
+                                ),
+                                l_lang::SymbolKind::Function => {
+                                    (Some(CompletionItemKind::FUNCTION), None)
+                                }
+                                l_lang::SymbolKind::Struct => {
+                                    (Some(CompletionItemKind::STRUCT), None)
+                                }
+                                _ => (None, None),
+                            };
+
+                            Some(CompletionItem {
+                                label: name.to_string(),
+                                kind,
+                                detail,
+                                insert_text: Some(name.to_string()),
+                                ..Default::default()
+                            })
+                        },
+                    )
                 })
                 .collect::<Vec<_>>()
         };
 
         // Try to find the AST node at the current position
-        if let Some(nearest_node) =
-            find_node_at_offset(semantic_result.program.file(), offset as u32)
-        {
+        if let Some(nearest_node) = find_node_at_offset(
+            semantic_result.program.file(),
+            u32::try_from(offset).expect("offset out of range"),
+        ) {
             match nearest_node {
                 // Field access completion: suggest available fields/members
                 AstNode::ExprField(field_expr) => {
@@ -977,7 +984,7 @@ impl Backend {
                     code: None,
                     code_description: None,
                     source: None,
-                    message: sem_err.message.to_string(),
+                    message: sem_err.message.clone(),
                     related_information: None,
                     tags: None,
                     data: None,
@@ -1003,14 +1010,14 @@ impl Backend {
         // Parse the URI string into a Uri object
         if let Ok(uri) = Uri::from_str(&item.uri) {
             // Double-check server status before publishing diagnostics
-            if !self.is_shutting_down() {
+            if self.is_shutting_down() {
+                debug!("Skipping diagnostics publish - server is shutting down");
+            } else {
                 // publish_diagnostics returns () instead of Result, so call directly
                 self.client
                     .publish_diagnostics(uri, diagnostics, None)
                     .await;
                 debug!("Diagnostics published successfully");
-            } else {
-                debug!("Skipping diagnostics publish - server is shutting down");
             }
         } else {
             debug!("Failed to parse URI: {}", item.uri);
@@ -1062,7 +1069,7 @@ impl Backend {
             }
         }
 
-        self.convert_to_semantic_tokens(incomplete_tokens, &rope)
+        Some(self.convert_to_semantic_tokens(incomplete_tokens, &rope))
     }
 
     /// Build semantic tokens for a specific range in a document.
@@ -1104,7 +1111,7 @@ impl Backend {
             }
         }
 
-        self.convert_to_semantic_tokens(incomplete_tokens, &rope)
+        Some(self.convert_to_semantic_tokens(incomplete_tokens, &rope))
     }
 }
 
@@ -1145,13 +1152,19 @@ fn offset_to_position(offset: usize, rope: &Rope) -> Option<Position> {
     if char_offset == rope.len_chars() {
         let line = rope.len_lines() - 1;
         let column = rope.line(line).len_chars();
-        return Some(Position::new(line as u32, column as u32));
+        return Some(Position::new(
+            u32::try_from(line).expect("line out of range"),
+            u32::try_from(column).expect("column out of range"),
+        ));
     }
 
     let line = rope.try_char_to_line(char_offset).ok()?;
     let first_char_of_line = rope.try_line_to_char(line).ok()?;
     let column = char_offset - first_char_of_line;
-    Some(Position::new(line as u32, column as u32))
+    Some(Position::new(
+        u32::try_from(line).expect("line out of range"),
+        u32::try_from(column).expect("column out of range"),
+    ))
 }
 
 /// Convert a position in the document to a byte offset.

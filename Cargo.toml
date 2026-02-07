@@ -25,7 +25,7 @@ tokio = { version = "1.49", features = ["full"] }
 [lints.rust]
 unsafe_code = "warn"
 missing_debug_implementations = "warn"
-#missing_docs = "warn"
+missing_docs = "warn"
 
 [lints.rustdoc]
 all = "warn"

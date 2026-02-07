@@ -60,13 +60,9 @@ This repo is a template for building Language Server Protocol (LSP) implementati
 1. `bun install`
 2. `cargo build`
 3. Open the project in VSCode: `code .`
-4. In VSCode, press <kbd>F5</kbd> or change to the Debug panel and click <kbd>Launch Client</kbd>.
+4. In VSCode, press <kbd>F5</kbd> or change to the Debug panel and click <kbd>Launch Extension</kbd>.
 5. In the newly launched VSCode instance, open the file `examples/test.l` from this project.
 6. If the LSP is working correctly you should see syntax highlighting and the features described below should work.
-
-> [!note]
-> If encountered errors like `Cannot find module '/xxx/xxx/dist/extension.js'`
-> please try run command `tsc -b` manually, you could refer https://github.com/IWANABETHATGUY/tower-lsp-boilerplate/issues/6 for more details
 
 ### Preview and test extension locally with `VsCode`
 
