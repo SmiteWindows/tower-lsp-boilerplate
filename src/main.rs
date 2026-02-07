@@ -1118,26 +1118,39 @@ struct TextDocumentChange<'a> {
     text: &'a str,
 }
 
+/// Convert a byte offset to a character offset.
+///
+/// This function converts a byte offset to a character offset,
+/// which is needed because ropey uses character offsets internally.
+fn byte_offset_to_char_offset(byte_offset: usize, rope: &Rope) -> Option<usize> {
+    if byte_offset > rope.len_bytes() {
+        return None;
+    }
+    Some(rope.byte_to_char(byte_offset))
+}
+
 /// Convert a byte offset to a position in the document.
 ///
 /// This function converts a byte offset to a line and character position,
 /// which is used by the LSP protocol.
 fn offset_to_position(offset: usize, rope: &Rope) -> Option<Position> {
+    let char_offset = byte_offset_to_char_offset(offset, rope)?;
+
     // Check if offset is within rope bounds
-    if offset > rope.len_chars() {
+    if char_offset > rope.len_chars() {
         return None;
     }
 
     // Handle the case where offset is exactly at the end of the file
-    if offset == rope.len_chars() {
+    if char_offset == rope.len_chars() {
         let line = rope.len_lines() - 1;
         let column = rope.line(line).len_chars();
         return Some(Position::new(line as u32, column as u32));
     }
 
-    let line = rope.try_char_to_line(offset).ok()?;
+    let line = rope.try_char_to_line(char_offset).ok()?;
     let first_char_of_line = rope.try_line_to_char(line).ok()?;
-    let column = offset - first_char_of_line;
+    let column = char_offset - first_char_of_line;
     Some(Position::new(line as u32, column as u32))
 }
 
